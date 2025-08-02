@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  itmo-parser-bot:
+    build: .
+    container_name: itmo_parser_bot
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - YOUR_ID=${YOUR_ID}
+    volumes:
+      - ./data:/app/data
+    networks:
+      - bot-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('https://api.telegram.org/bot${BOT_TOKEN}/getMe', timeout=10)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  bot-network:
+    driver: bridge
+
+volumes:
+  bot-data:
+    driver: local
