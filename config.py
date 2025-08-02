@@ -1,7 +1,7 @@
 import os
 
 # Bot token from BotFather - вставьте свой токен сюда
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
+BOT_TOKEN = "7229928084:AAFeSaAbV8RSM0CSe6R_zuR4MNSJKiGtZs0"
 
 # URL for parsing
 ITMO_URL = "https://abit.itmo.ru/ranking/bachelor/contract/2196"
