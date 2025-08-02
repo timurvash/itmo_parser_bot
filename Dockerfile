@@ -7,6 +7,7 @@ WORKDIR /app
 # Устанавливаем системные зависимости
 RUN apt-get update && apt-get install -y \
     gcc \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Копируем файл зависимостей
@@ -21,9 +22,12 @@ COPY . .
 # Создаем директорию для данных
 RUN mkdir -p /app/data
 
-# Создаем пользователя для безопасности
-RUN useradd -m -u 1000 botuser && chown -R botuser:botuser /app
-USER botuser
+# Устанавливаем переменные окружения по умолчанию
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Открываем порт (если потребуется для веб-хуков)
+EXPOSE 8000
 
 # Команда запуска
 CMD ["python", "main.py"]
