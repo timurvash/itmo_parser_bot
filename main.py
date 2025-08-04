@@ -4,7 +4,6 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from datetime import datetime
-import schedule
 import threading
 import time
 
@@ -13,11 +12,21 @@ from database import add_user, remove_user, get_all_users
 from parser import ITMOParser
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+# Отключаем избыточные логи
+logging.getLogger('aiogram.dispatcher').setLevel(logging.WARNING)
+logging.getLogger('aiogram.bot').setLevel(logging.WARNING)
 
 # Инициализация бота и диспетчера
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+# Глобальная переменная для event loop
+main_loop = None
 
 
 # Создаем клавиатуру
@@ -99,22 +108,30 @@ async def unsubscribe(message: types.Message):
 # Функция уведомления пользователей
 async def notify_users(old_count, new_count):
     """Уведомить всех подписчиков об изменении"""
-    users = await get_all_users()
+    try:
+        users = await get_all_users()
 
-    message_text = (
-        f"🚨 **!!!ОБНОВЛЕНИЕ!!!**\n\n"
-        f"📝 Новое количество человек с подписанными договорами: **{new_count}**\n"
-        f"📊 Было: {old_count}\n"
-        f"📈 Изменение: {'+' if new_count > old_count else ''}{new_count - old_count}\n\n"
-        f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    )
+        message_text = (
+            f"🚨 **!!!ОБНОВЛЕНИЕ!!!**\n\n"
+            f"📝 Новое количество человек с подписанными договорами: **{new_count}**\n"
+            f"📊 Было: {old_count}\n"
+            f"📈 Изменение: {'+' if new_count > old_count else ''}{new_count - old_count}\n\n"
+            f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
 
-    for user_id in users:
-        try:
-            await bot.send_message(user_id, message_text, parse_mode='Markdown')
-            await asyncio.sleep(0.1)  # Небольшая задержка между отправками
-        except Exception as e:
-            print(f"Ошибка отправки пользователю {user_id}: {e}")
+        successful_sends = 0
+        for user_id in users:
+            try:
+                await bot.send_message(user_id, message_text, parse_mode='Markdown')
+                successful_sends += 1
+                await asyncio.sleep(0.1)  # Небольшая задержка между отправками
+            except Exception as e:
+                print(f"❌ Ошибка отправки пользователю {user_id}: {e}")
+
+        print(f"✅ Уведомления отправлены {successful_sends}/{len(users)} пользователям")
+
+    except Exception as e:
+        print(f"❌ Ошибка в notify_users: {e}")
 
 
 # Функция парсинга по расписанию
@@ -137,29 +154,46 @@ def scheduled_parsing():
 
             # Если количество изменилось, отправляем уведомления
             if old_count is not None and old_count != new_count:
-                print(f"Изменение обнаружено: {old_count} -> {new_count}")
-                # Запускаем уведомления в event loop
-                asyncio.create_task(notify_users(old_count, new_count))
+                print(f"🔄 Изменение обнаружено: {old_count} -> {new_count}")
 
-            print(f"Парсинг выполнен: {data['timestamp']}, договоров: {new_count}")
+                # Запускаем уведомления в основном event loop
+                if main_loop and not main_loop.is_closed():
+                    asyncio.run_coroutine_threadsafe(
+                        notify_users(old_count, new_count),
+                        main_loop
+                    )
+
+            print(f"✅ Парсинг выполнен: {data['timestamp']}, договоров: {new_count}")
         else:
-            print("Ошибка при парсинге")
+            print("❌ Ошибка при парсинге")
 
     except Exception as e:
-        print(f"Ошибка в scheduled_parsing: {e}")
+        print(f"❌ Ошибка в scheduled_parsing: {e}")
 
 
 # Функция для запуска планировщика в отдельном потоке
 def run_scheduler():
+    import schedule
+
+    # Настраиваем расписание
     schedule.every(2).hours.do(scheduled_parsing)
 
+    print("📅 Планировщик запущен (каждые 2 часа)")
+
     while True:
-        schedule.run_pending()
-        time.sleep(60)  # Проверяем каждую минуту
+        try:
+            schedule.run_pending()
+            time.sleep(60)  # Проверяем каждую минуту
+        except Exception as e:
+            print(f"❌ Ошибка в планировщике: {e}")
+            time.sleep(60)
 
 
 # Основная функция
 async def main():
+    global main_loop
+    main_loop = asyncio.get_running_loop()
+
     print("🚀 Бот запущен!")
 
     # Запускаем планировщик в отдельном потоке
@@ -170,9 +204,26 @@ async def main():
     print("🔄 Выполняем первоначальный парсинг...")
     scheduled_parsing()
 
-    # Запускаем бота
-    await dp.start_polling(bot)
+    # Запускаем бота с обработкой ошибок
+    try:
+        await dp.start_polling(
+            bot,
+            polling_timeout=20,
+            request_timeout=15,
+            retry_after=3
+        )
+    except KeyboardInterrupt:
+        print("🛑 Бот остановлен пользователем")
+    except Exception as e:
+        print(f"❌ Критическая ошибка: {e}")
+    finally:
+        await bot.session.close()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("🛑 Программа завершена")
+    except Exception as e:
+        print(f"❌ Фатальная ошибка: {e}")
