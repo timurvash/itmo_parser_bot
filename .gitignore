@@ -100,7 +100,6 @@ celerybeat.pid
 .env.local
 .env.production
 .env.staging
-.env.*
 
 # Виртуальные окружения
 .venv
