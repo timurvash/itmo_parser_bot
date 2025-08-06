@@ -3,7 +3,11 @@ from bs4 import BeautifulSoup
 import csv
 import os
 from datetime import datetime
+import pytz
 from config import ITMO_URL, HEADERS, CSV_FILE, YOUR_ID
+
+# Московская временная зона
+MOSCOW_TZ = pytz.timezone('Europe/Moscow')
 
 
 class ITMOParser:
@@ -11,6 +15,16 @@ class ITMOParser:
         self.url = ITMO_URL
         self.headers = HEADERS
         self.your_id = YOUR_ID
+
+    def get_moscow_time(self):
+        """Получить текущее московское время"""
+        return datetime.now(MOSCOW_TZ)
+
+    def format_moscow_time(self, dt=None):
+        """Форматировать московское время"""
+        if dt is None:
+            dt = self.get_moscow_time()
+        return dt.strftime('%Y-%m-%d %H:%M:%S')
 
     def parse_rating(self):
         """Парсинг рейтинга"""
@@ -51,16 +65,20 @@ class ITMOParser:
                             if has_contract:
                                 your_contract_position = contract_position_counter
 
+            # Используем московское время
+            moscow_time = self.format_moscow_time()
+
             return {
                 'total_people': total_people,
                 'contract_count': contract_count,
                 'your_position': your_position,
                 'your_contract_position': your_contract_position,
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                'timestamp': moscow_time
             }
 
         except Exception as e:
-            print(f"Ошибка парсинга: {e}")
+            moscow_time = self.format_moscow_time()
+            print(f"Ошибка парсинга в {moscow_time}: {e}")
             return None
 
     def save_to_csv(self, data):
@@ -90,6 +108,7 @@ class ITMOParser:
                 rows = list(reader)
                 if rows:
                     return int(rows[-1]['contract_count'])
-        except:
-            pass
+        except Exception as e:
+            moscow_time = self.format_moscow_time()
+            print(f"Ошибка чтения CSV в {moscow_time}: {e}")
         return None

@@ -6,10 +6,14 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from datetime import datetime
 import threading
 import time
+import pytz
 
 from config import BOT_TOKEN
 from database import add_user, remove_user, get_all_users
 from parser import ITMOParser
+
+# Московская временная зона
+MOSCOW_TZ = pytz.timezone('Europe/Moscow')
 
 # Настройка логирования
 logging.basicConfig(
@@ -27,6 +31,18 @@ dp = Dispatcher()
 
 # Глобальная переменная для event loop
 main_loop = None
+
+
+def get_moscow_time():
+    """Получить текущее московское время"""
+    return datetime.now(MOSCOW_TZ)
+
+
+def format_moscow_time(dt=None):
+    """Форматировать московское время"""
+    if dt is None:
+        dt = get_moscow_time()
+    return dt.strftime('%Y-%m-%d %H:%M:%S')
 
 
 # Создаем клавиатуру
@@ -74,7 +90,7 @@ async def check_rating(message: types.Message):
             f"📝 Человек с договорами: {data['contract_count']}\n\n"
             f"{your_pos_text}\n"
             f"{your_contract_pos_text}\n\n"
-            f"🕐 Обновлено: {data['timestamp']}"
+            f"🕐 Обновлено: {data['timestamp']} (МСК)"
         )
 
         # Сохраняем данные
@@ -111,12 +127,14 @@ async def notify_users(old_count, new_count):
     try:
         users = await get_all_users()
 
+        moscow_time = format_moscow_time()
+
         message_text = (
             f"🚨 **!!!ОБНОВЛЕНИЕ!!!**\n\n"
             f"📝 Новое количество человек с подписанными договорами: **{new_count}**\n"
             f"📊 Было: {old_count}\n"
             f"📈 Изменение: {'+' if new_count > old_count else ''}{new_count - old_count}\n\n"
-            f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            f"🕐 {moscow_time} (МСК)"
         )
 
         successful_sends = 0
@@ -154,7 +172,8 @@ def scheduled_parsing():
 
             # Если количество изменилось, отправляем уведомления
             if old_count is not None and old_count != new_count:
-                print(f"🔄 Изменение обнаружено: {old_count} -> {new_count}")
+                moscow_time = format_moscow_time()
+                print(f"🔄 Изменение обнаружено: {old_count} -> {new_count} в {moscow_time}")
 
                 # Запускаем уведомления в основном event loop
                 if main_loop and not main_loop.is_closed():
@@ -163,12 +182,15 @@ def scheduled_parsing():
                         main_loop
                     )
 
-            print(f"✅ Парсинг выполнен: {data['timestamp']}, договоров: {new_count}")
+            moscow_time = format_moscow_time()
+            print(f"✅ Парсинг выполнен: {moscow_time}, договоров: {new_count}")
         else:
-            print("❌ Ошибка при парсинге")
+            moscow_time = format_moscow_time()
+            print(f"❌ Ошибка при парсинге в {moscow_time}")
 
     except Exception as e:
-        print(f"❌ Ошибка в scheduled_parsing: {e}")
+        moscow_time = format_moscow_time()
+        print(f"❌ Ошибка в scheduled_parsing в {moscow_time}: {e}")
 
 
 # Функция для запуска планировщика в отдельном потоке
@@ -178,14 +200,16 @@ def run_scheduler():
     # Настраиваем расписание
     schedule.every(2).hours.do(scheduled_parsing)
 
-    print("📅 Планировщик запущен (каждые 2 часа)")
+    moscow_time = format_moscow_time()
+    print(f"📅 Планировщик запущен (каждые 2 часа) в {moscow_time}")
 
     while True:
         try:
             schedule.run_pending()
             time.sleep(60)  # Проверяем каждую минуту
         except Exception as e:
-            print(f"❌ Ошибка в планировщике: {e}")
+            moscow_time = format_moscow_time()
+            print(f"❌ Ошибка в планировщике в {moscow_time}: {e}")
             time.sleep(60)
 
 
@@ -194,7 +218,8 @@ async def main():
     global main_loop
     main_loop = asyncio.get_running_loop()
 
-    print("🚀 Бот запущен!")
+    moscow_time = format_moscow_time()
+    print(f"🚀 Бот запущен в {moscow_time}!")
 
     # Запускаем планировщик в отдельном потоке
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
@@ -213,9 +238,11 @@ async def main():
             retry_after=3
         )
     except KeyboardInterrupt:
-        print("🛑 Бот остановлен пользователем")
+        moscow_time = format_moscow_time()
+        print(f"🛑 Бот остановлен пользователем в {moscow_time}")
     except Exception as e:
-        print(f"❌ Критическая ошибка: {e}")
+        moscow_time = format_moscow_time()
+        print(f"❌ Критическая ошибка в {moscow_time}: {e}")
     finally:
         await bot.session.close()
 
@@ -224,6 +251,8 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("🛑 Программа завершена")
+        moscow_time = format_moscow_time()
+        print(f"🛑 Программа завершена в {moscow_time}")
     except Exception as e:
-        print(f"❌ Фатальная ошибка: {e}")
+        moscow_time = format_moscow_time()
+        print(f"❌ Фатальная ошибка в {moscow_time}: {e}")
